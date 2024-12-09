@@ -5,7 +5,6 @@ import heapq
 import numpy as np
 
 
-""" COMPLETE """
 def gen_complete(n):
     # Create a directed graph
     G = rx.PyDiGraph()
@@ -22,7 +21,6 @@ def gen_complete(n):
     return G
 
 
-""" TREES """
 def gen_trees(n):
     def prufer_to_tree(prufer):
         degree = [1] * n
@@ -65,7 +63,6 @@ def gen_trees(n):
     return G
 
 
-""" ERDOS-RENYI """
 def gen_erdos_renyi(n, p):
     # Generate a directed Erdős–Rényi graph using rustworkx
     G = rx.directed_gnp_random_graph(n, p)
@@ -78,7 +75,6 @@ def gen_erdos_renyi(n, p):
     return G
 
 
-""" Barabasi-Albert """
 def gen_barabasi_albert(n, m):
     # Generate an undirected Barabasi-Albert graph using rustworkx
     G = rx.barabasi_albert_graph(n, m)
@@ -96,7 +92,59 @@ def gen_barabasi_albert(n, m):
     return G
 
 
-""" Generic """
+def gen_sparse_ill_conditioned(n, edge_factor=1.5):
+    # Create an undirected graph
+    G = rx.PyGraph()
+    G.add_nodes_from([None] * n)  # Add n nodes with no data
+
+    # Generate a random tree to ensure connectivity
+    nodes = list(range(n))
+    random.shuffle(nodes)
+    edges = []
+    for i in range(1, n):
+        u = nodes[i - 1]
+        v = nodes[i]
+        edges.append((u, v, None))
+
+    # Add edges of the tree to the graph
+    G.add_edges_from(edges)
+
+    existing_edges = set((min(u, v), max(u, v)) for u, v, _ in edges)
+
+    # Calculate desired number of edges
+    desired_num_edges = int(edge_factor * n)
+
+    # Add random edges until we reach the desired number of edges
+    while len(edges) < desired_num_edges:
+        u, v = random.sample(range(n), 2)
+        edge = (min(u, v), max(u, v))
+        if edge not in existing_edges:
+            G.add_edge(u, v, None)
+            edges.append((u, v, None))
+            existing_edges.add(edge)
+
+    # Create a directed graph and add both directions for each edge
+    DG = rx.PyDiGraph()
+    DG.add_nodes_from([None] * n)  # Add n nodes with no data
+
+    # For capacities, half small, half large
+    undirected_edges = [(u, v) for u, v, _ in edges]
+    num_undirected_edges = len(undirected_edges)
+    small_capacity = 1e-15
+    large_capacity = 1e15
+
+    # Shuffle edges to randomize capacity assignment
+    random.shuffle(undirected_edges)
+
+    # Assign capacities and add edges to the directed graph
+    for i, (u, v) in enumerate(undirected_edges):
+        capacity = small_capacity if i < num_undirected_edges // 2 else large_capacity
+        DG.add_edge(u, v, {'capacity': capacity})
+        DG.add_edge(v, u, {'capacity': capacity})
+
+    return DG
+
+
 def gen_graph(params, n):
     if params['type'] == 'complete':
         return gen_complete(n)
@@ -106,7 +154,10 @@ def gen_graph(params, n):
         return gen_erdos_renyi(n, params['p'])
     if params['type'] == 'barabasi-albert':
         return gen_barabasi_albert(n, params['m'])
+    if params['type'] == 'sparse-ill-conditioned':
+        return gen_sparse_ill_conditioned(n)
     return None
+
 
 def sample_node_pairs(G, S):
     pairs = []
@@ -117,26 +168,27 @@ def sample_node_pairs(G, S):
 
 
 def main():
-    n = 10  # Number of nodes for all graphs
+    n = 500  # Number of nodes for all graphs
     examples = [
         {'type': 'complete'},
         {'type': 'tree'},
         {'type': 'erdos-renyi', 'p': 0.3},
         {'type': 'barabasi-albert', 'm': 2},
+        {'type': 'sparse-ill-conditioned'},
     ]
-    
+
     for params in examples:
         graph = gen_graph(params, n)
-        
+
         # Print some basic properties of the graph
         print(f"Generated {params['type']} graph with {n} nodes:")
         print(f"  Number of edges: {len(graph.edge_list())}")
         print(f"  Sample edges with capacities:")
 
-
         for (u, v, data) in list(graph.edge_index_map().values())[:min(len(graph.edge_list()), 5)]:
             print(f"({u}, {v}) with capacity {data['capacity']}")
         print()
+
 
 if __name__ == "__main__":
     main()
