@@ -1,4 +1,4 @@
-import networkx as nx
+import rustworkx as rx
 from ortools.linear_solver import pywraplp
 from pulp import LpProblem, LpMaximize, LpVariable, LpStatusOptimal, value, lpSum
 import pulp
@@ -14,12 +14,8 @@ pulp_solvers_local = {
     'PULP_COIN_CMD_BARRIER': pulp.COIN_CMD(msg=0, options=['barrier'])
 }
 
-pulp_solvers_colab = {
-    'PULP_CBC_CMD': pulp.PULP_CBC_CMD(msg=0)
-}
-
-
 def max_flow_with_ortools(G, s, t, method='GLOP', debug=False):
+    
     if method not in ['GLOP', 'PDLP', 'CLP']:
         raise ValueError("Invalid solver method. Please choose from 'GLOP', 'PDLP', or 'CLP'.")
 
@@ -28,24 +24,22 @@ def max_flow_with_ortools(G, s, t, method='GLOP', debug=False):
 
     # Create variables for flows on edges
     flow = {}
-    for u, v, data in G.edges(data=True):
+    for _, (u, v, data) in G.edge_index_map().items():
         capacity = data.get('capacity', 1)  # Default capacity is 1 if not provided
         var_name = f'f_{u}_{v}'
         flow[(u, v)] = solver.NumVar(0, capacity, var_name)
 
     # Flow conservation constraints for all nodes except s and t
-    for node in G.nodes():
+    for node in range(len(G)):
         if node == s or node == t:
             continue
-
-        # Calculate inflow and outflow manually
-        inflow = solver.Sum([flow[(u, node)] for u, v in G.edges() if v == node and (u, v) in flow])
-        outflow = solver.Sum([flow[(node, v)] for u, v in G.edges() if u == node and (u, v) in flow])
+        inflow = solver.Sum([flow[(u, node)] for u, _, _ in G.in_edges(node) if (u, node) in flow])
+        outflow = solver.Sum([flow[(node, v)] for _, v, _ in G.out_edges(node) if (node, v) in flow])
         solver.Add(inflow == outflow)
 
     # Objective: Maximize total flow into sink t
-    total_inflow_t = solver.Sum([flow[(u, t)] for u, v in G.edges() if v == t and (u, v) in flow])
-    total_outflow_t = solver.Sum([flow[(t, v)] for u, v in G.edges() if u == t and (u, v) in flow])
+    total_inflow_t = solver.Sum([flow[(u, t)] for u, _, _ in G.in_edges(t) if (u, t) in flow])
+    total_outflow_t = solver.Sum([flow[(t, v)] for _, v, _ in G.out_edges(t) if (t, v) in flow])
     net_flow_t = total_inflow_t - total_outflow_t
     solver.Maximize(net_flow_t)
 
@@ -63,7 +57,6 @@ def max_flow_with_ortools(G, s, t, method='GLOP', debug=False):
         max_flow_value = net_flow_t.solution_value()
         if debug:
             print(f"Maximum flow from {s} to {t}: {max_flow_value}")
-            # Optionally, print the flow values on the edges
             for (u, v), var in flow.items():
                 flow_value = var.solution_value()
                 if flow_value > 0:
@@ -82,46 +75,40 @@ def max_flow_with_ortools(G, s, t, method='GLOP', debug=False):
 
     return result
 
-
 def max_flow_with_pulp(G, s, t, method='PULP_CBC_CMD', debug=False):
-    # Get list of node indices
-    nodes = list(G.nodes())
-    if len(nodes) < 2:
-        raise ValueError("Graph must have at least two nodes.")
 
     # Create the LP problem
     prob = LpProblem("MaxFlow", LpMaximize)
 
     # Create variables for flows on edges
     flow = {}
-    # Build mapping from nodes to incoming and outgoing edges
-    in_edges = {node: [] for node in nodes}
-    out_edges = {node: [] for node in nodes}
+    in_edges = {node: [] for node in range(len(G))}
+    out_edges = {node: [] for node in range(len(G))}
 
     # Iterate over edges to create flow variables
-    for u, v, data in G.edges(data=True):
-        capacity = data.get('capacity')  # Default capacity is 1 if not provided
+    for _, (u, v, data) in G.edge_index_map().items():
+        capacity = data.get('capacity', 1)  # Default capacity is 1 if not provided
         var_name = f'f_{u}_{v}'
         flow[(u, v)] = LpVariable(var_name, lowBound=0, upBound=capacity)
         out_edges[u].append((u, v))
         in_edges[v].append((u, v))
 
     # Flow conservation constraints for all nodes except s and t
-    for node in nodes:
+    for node in range(len(G)):
         if node == s or node == t:
             continue
-        inflow = lpSum([flow[(u, node)] for (u, node) in in_edges[node]])
-        outflow = lpSum([flow[(node, v)] for (node, v) in out_edges[node]])
+        inflow = lpSum([flow[(u, node)] for u, node in in_edges[node]])
+        outflow = lpSum([flow[(node, v)] for node, v in out_edges[node]])
         prob += (inflow == outflow), f"FlowConservation_{node}"
 
     # Objective: Maximize total flow into sink t
-    total_inflow_t = lpSum([flow[(u, t)] for (u, t) in in_edges[t]])
-    total_outflow_t = lpSum([flow[(t, v)] for (t, v) in out_edges[t]])
+    total_inflow_t = lpSum([flow[(u, t)] for u, t in in_edges[t]])
+    total_outflow_t = lpSum([flow[(t, v)] for t, v in out_edges[t]])
     net_flow_t = total_inflow_t - total_outflow_t
     prob += net_flow_t, "MaximizeNetFlowIntoSink"
 
     solver_type = pulp_solvers_local[method]
-
+    
     if debug:
         print(f"Using solver: {method} between nodes {s} and {t}")
 
@@ -130,31 +117,31 @@ def max_flow_with_pulp(G, s, t, method='PULP_CBC_CMD', debug=False):
     status = prob.solve(solver_type)
     end_time = time.perf_counter()
 
-    solve_time = end_time - start_time  # Elapsed time in seconds
+    solve_time = end_time - start_time
 
     if status == LpStatusOptimal:
         max_flow_value = value(net_flow_t)
         if debug:
-            print(f"Maximum flow from {G[s]} to {G[t]}: {max_flow_value}")
-            print(f"LP Solve Time: {solve_time:.6f} seconds")  # Print the solve time
-            # Optionally, print the flow values on the edges
+            print(f"Maximum flow from {s} to {t}: {max_flow_value}")
+            print(f"LP Solve Time: {solve_time:.6f} seconds")
             for (u, v), var in flow.items():
                 flow_value = var.varValue
                 if flow_value > 0:
-                    print(f"Flow from {G[u]} to {G[v]}: {flow_value}")
+                    print(f"Flow from {u} to {v}: {flow_value}")
     else:
         max_flow_value = None
         if debug:
             print("The solver did not find an optimal solution.")
-            print(f"LP Solve Time: {solve_time:.6f} seconds")  # Even if not optimal, print the solve time
+            print(f"LP Solve Time: {solve_time:.6f} seconds")
 
     result = {
-        'run_time': prob.solutionTime,
+        'run_time': solve_time,
         'flow_value': max_flow_value,
-        'status': status == LpStatusOptimal
+        'status': status == 1
     }
 
     return result
+
 
 
 # Single OR Tools wrapper functions to call individual methods
@@ -190,62 +177,35 @@ def max_flow_pulp_COIN_barrier(G, s, t):
 def max_flow_pulp_GLPK(G, s, t):
     return max_flow_with_pulp(G, s, t, method='PULP_GLPK')
 
-
 if __name__ == "__main__":
-    G = nx.DiGraph()
-    G.add_edge('A', 'B', capacity=3)
-    G.add_edge('A', 'C', capacity=2)
-    G.add_edge('B', 'C', capacity=1)
-    G.add_edge('B', 'D', capacity=3)
-    G.add_edge('C', 'D', capacity=2)
-    G.add_edge('C', 'E', capacity=3)
-    G.add_edge('D', 'E', capacity=2)
 
-    # Run all the solvers
+    # Create a directed graph
+    G = rx.PyDiGraph()
+
+    # Add nodes
+    nodes = {}
+    for node in ['A', 'B', 'C', 'D', 'E']:
+        nodes[node] = G.add_node(node)
+
+    # Add edges with capacities
+    G.add_edge(nodes['A'], nodes['B'], {"capacity": 3})
+    G.add_edge(nodes['A'], nodes['C'], {"capacity": 2})
+    G.add_edge(nodes['B'], nodes['C'], {"capacity": 1})
+    G.add_edge(nodes['B'], nodes['D'], {"capacity": 3})
+    G.add_edge(nodes['C'], nodes['D'], {"capacity": 2})
+    G.add_edge(nodes['C'], nodes['E'], {"capacity": 3})
+    G.add_edge(nodes['D'], nodes['E'], {"capacity": 2})
+
+    # Solve the problem using OR-Tools
     print('-' * 50)
-    print("Solving example problem with ortools GLOP")
-    response = max_flow_ortools_GLOP(G, 'B', 'E')
+    print("Solving example problem with ortools")
+    response = max_flow_with_ortools(G, nodes['B'], nodes['E'], method='CLP', debug=True)
     print(response)
     print('-' * 50)
 
+    # Solve the problem using PuLP
     print('-' * 50)
-    print("Solving example problem with ortools PDLP")
-    response = max_flow_ortools_PDLP(G, 'B', 'E')
-    print(response)
-    print('-' * 50)
-
-    print('-' * 50)
-    print("Solving example problem with ortools CLP")
-    response = max_flow_ortools_CLP(G, 'B', 'E')
-    print(response)
-    print('-' * 50)
-
-    print('-' * 50)
-    print("Solving example problem with pulp CBC")
-    response = max_flow_pulp_CBC(G, 'B', 'E')
-    print(response)
-    print('-' * 50)
-
-    print('-' * 50)
-    print("Solving example problem with pulp COIN primal")
-    response = max_flow_pulp_COIN_primal(G, 'B', 'E')
-    print(response)
-    print('-' * 50)
-
-    print('-' * 50)
-    print("Solving example problem with pulp COIN dual")
-    response = max_flow_pulp_COIN_dual(G, 'B', 'E')
-    print(response)
-    print('-' * 50)
-
-    print('-' * 50)
-    print("Solving example problem with pulp COIN barrier")
-    response = max_flow_pulp_COIN_barrier(G, 'B', 'E')
-    print(response)
-    print('-' * 50)
-
-    print('-' * 50)
-    print("Solving example problem with pulp GLPK")
-    response = max_flow_pulp_GLPK(G, 'B', 'E')
+    print("Solving example problem with pulp")
+    response = max_flow_pulp_GLPK(G, nodes['B'], nodes['E'])
     print(response)
     print('-' * 50)
