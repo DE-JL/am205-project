@@ -1,0 +1,21 @@
+for n in n_vals:
+    graphs = build_graphs(n, k)
+    for each graph G in graphs:
+        source_sink_pairs = sample(G, S)
+
+        for each pair (s, t) in source_sink_pairs:
+            for each method, method_name in methods:
+                t = time(method.solve(G, s, t))
+
+        for each method, method_name in methods:
+            t_avg = average time for method over all pairs
+
+    for each method, method_name in methods:
+        compute the average time for each method over all graphs
+
+x-axis: n_vals
+y-axis: time
+
+for each method, method_name in methods:
+    plot the average solve time over all n_vals
+    label the point with method_name
