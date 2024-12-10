@@ -3,6 +3,7 @@ from ortools.linear_solver import pywraplp
 from pulp import LpProblem, LpMaximize, LpVariable, LpStatusOptimal, value, lpSum
 import pulp
 import time
+import builders
 
 or_tools_solvers = ['GLOP', 'PDLP', 'CLP']
 
@@ -28,10 +29,12 @@ def max_flow_with_ortools(G, s, t, method='GLOP', debug=False):
 
     # Create variables for flows on edges
     flow = {}
+    num_vars = 0
     for u, v, data in G.edges(data=True):
         capacity = data.get('capacity', 1)  # Default capacity is 1 if not provided
         var_name = f'f_{u}_{v}'
         flow[(u, v)] = solver.NumVar(0, capacity, var_name)
+        num_vars += 1
 
     # Flow conservation constraints for all nodes except s and t
     for node in G.nodes():
@@ -247,5 +250,34 @@ if __name__ == "__main__":
     print('-' * 50)
     print("Solving example problem with pulp GLPK")
     response = max_flow_pulp_GLPK(G, 'B', 'E')
+    print(response)
+    print('-' * 50)
+
+if __name__ == "__main__":
+
+    G = builders.gen_erdos_renyi(100, 0.3)
+
+    # Run all the solvers
+    print('-' * 50)
+    print("Solving example problem with ortools GLOP")
+    response = max_flow_ortools_GLOP(G, 0, 50)
+    print(response)
+    print('-' * 50)
+
+    print('-' * 50)
+    print("Solving example problem with ortools PDLP")
+    response = max_flow_ortools_PDLP(G, 0, 99)
+    print(response)
+    print('-' * 50)
+
+    print('-' * 50)
+    print("Solving example problem with ortools CLP")
+    response = max_flow_ortools_CLP(G, 0, 99)
+    print(response)
+    print('-' * 50)
+
+    print('-' * 50)
+    print("Solving example problem with pulp CBC")
+    response = max_flow_pulp_CBC(G, 0, 99)
     print(response)
     print('-' * 50)

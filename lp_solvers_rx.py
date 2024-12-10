@@ -135,7 +135,7 @@ def max_flow_with_pulp(G, s, t, method='PULP_CBC_CMD', debug=False):
             print(f"LP Solve Time: {solve_time:.6f} seconds")
 
     result = {
-        'run_time': solve_time,
+        'run_time': prob.solutionTime,
         'flow_value': max_flow_value,
         'status': status == 1
     }
@@ -196,16 +196,55 @@ if __name__ == "__main__":
     G.add_edge(nodes['C'], nodes['E'], {"capacity": 3})
     G.add_edge(nodes['D'], nodes['E'], {"capacity": 2})
 
-    # Solve the problem using OR-Tools
+
+    # Solve on rest of the solver wrappers
     print('-' * 50)
     print("Solving example problem with ortools")
-    response = max_flow_with_ortools(G, nodes['B'], nodes['E'], method='CLP', debug=True)
+    response = max_flow_ortools_GLOP(G, nodes['B'], nodes['E'])
     print(response)
     print('-' * 50)
 
-    # Solve the problem using PuLP
+    print('-' * 50)
+    print("Solving example problem with ortools")
+    response = max_flow_ortools_PDLP(G, nodes['B'], nodes['E'])
+    print(response)
+    print('-' * 50)
+
+    print('-' * 50)
+    print("Solving example problem with ortools")
+    response = max_flow_ortools_CLP(G, nodes['B'], nodes['E'])
+    print(response)
+    print('-' * 50)
+
+    print('-' * 50)
+    print("Solving example problem with pulp")
+    response = max_flow_pulp_CBC(G, nodes['B'], nodes['E'])
+    print(response)
+    print('-' * 50)
+
+    print('-' * 50)
+    print("Solving example problem with pulp")
+    response = max_flow_pulp_COIN_primal(G, nodes['B'], nodes['E'])
+    print(response)
+    print('-' * 50)
+
+    print('-' * 50)
+    print("Solving example problem with pulp")
+    response = max_flow_pulp_COIN_dual(G, nodes['B'], nodes['E'])
+    print(response)
+    print('-' * 50)
+
+    print('-' * 50)
+    print("Solving example problem with pulp")
+    response = max_flow_pulp_COIN_barrier(G, nodes['B'], nodes['E'])
+    print(response)
+    print('-' * 50)
+
     print('-' * 50)
     print("Solving example problem with pulp")
     response = max_flow_pulp_GLPK(G, nodes['B'], nodes['E'])
     print(response)
     print('-' * 50)
+
+
+

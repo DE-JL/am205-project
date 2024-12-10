@@ -3,3 +3,6 @@
 .venv
 graphs
 __pycache__
+test.ipynb
+graphs_rx
+graphs_rx_counter

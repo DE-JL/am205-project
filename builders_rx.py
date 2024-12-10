@@ -71,6 +71,9 @@ def gen_erdos_renyi(n, p):
     for u, v in G.edge_list():
         capacity = random.random()  # Generate a random capacity
         G.update_edge(u, v, {"capacity": capacity})
+    
+    # Guarantee that there is at least one edge
+    G.add_edge(0, 1, {"capacity": random.random()})
 
     return G
 
@@ -91,58 +94,48 @@ def gen_barabasi_albert(n, m):
 
     return G
 
+def gen_sparse_ill_conditioned(n, edge_factor=1.5, small_capacity_fraction=0.5, scaling_factor=4):
+    # Step 1: Generate the initial graph G using gen_trees (black box)
+    G = gen_trees(n)  # G is a PyDiGraph with both directions for each edge
 
-def gen_sparse_ill_conditioned(n, edge_factor=1.5):
-    # Create an undirected graph
-    G = rx.PyGraph()
-    G.add_nodes_from([None] * n)  # Add n nodes with no data
-
-    # Generate a random tree to ensure connectivity
-    nodes = list(range(n))
-    random.shuffle(nodes)
-    edges = []
-    for i in range(1, n):
-        u = nodes[i - 1]
-        v = nodes[i]
-        edges.append((u, v, None))
-
-    # Add edges of the tree to the graph
-    G.add_edges_from(edges)
-
-    existing_edges = set((min(u, v), max(u, v)) for u, v, _ in edges)
-
-    # Calculate desired number of edges
+    # Step 2: Calculate the desired number of edges
     desired_num_edges = int(edge_factor * n)
+    num_existing_edges = len(G.edge_list()) // 2  # Each undirected edge is represented twice
 
-    # Add random edges until we reach the desired number of edges
-    while len(edges) < desired_num_edges:
+    # Step 3: Add new edges directly to G until desired number is reached
+    num_new_edges = desired_num_edges - num_existing_edges
+    attempts = 0
+    max_attempts = num_new_edges * 10  # To avoid infinite loops
+    while num_new_edges > 0 and attempts < max_attempts:
         u, v = random.sample(range(n), 2)
-        edge = (min(u, v), max(u, v))
-        if edge not in existing_edges:
-            G.add_edge(u, v, None)
-            edges.append((u, v, None))
-            existing_edges.add(edge)
+        if not G.has_edge(u, v):
+            # Add both directions without setting capacities yet
+            G.add_edge(u, v, {})
+            G.add_edge(v, u, {})
+            num_new_edges -= 1
+        attempts += 1
 
-    # Create a directed graph and add both directions for each edge
-    DG = rx.PyDiGraph()
-    DG.add_nodes_from([None] * n)  # Add n nodes with no data
+    # Step 4: Assign capacities to edges by flipping a coin
+    small_capacity = 10 ** (-scaling_factor)
+    large_capacity = 10 ** scaling_factor
 
-    # For capacities, half small, half large
-    undirected_edges = [(u, v) for u, v, _ in edges]
-    num_undirected_edges = len(undirected_edges)
-    small_capacity = 1e-15
-    large_capacity = 1e15
+    # randomly shuffle edges
+    edges = list(G.edge_list())
+    random.shuffle(edges)
 
-    # Shuffle edges to randomize capacity assignment
-    random.shuffle(undirected_edges)
+    threshold = int(len(edges) * small_capacity_fraction)
 
-    # Assign capacities and add edges to the directed graph
-    for i, (u, v) in enumerate(undirected_edges):
-        capacity = small_capacity if i < num_undirected_edges // 2 else large_capacity
-        DG.add_edge(u, v, {'capacity': capacity})
-        DG.add_edge(v, u, {'capacity': capacity})
+    for idx, (u, v) in enumerate(edges):
+        # Flip a coin with probability small_capacity_fraction
+        if idx < threshold:
+            capacity = small_capacity
+        else:
+            capacity = large_capacity
+        # Update the edge's capacity
+        G.update_edge(u, v, {"capacity": capacity})
 
-    return DG
+    return G
+
 
 
 def gen_graph(params, n):
@@ -155,7 +148,7 @@ def gen_graph(params, n):
     if params['type'] == 'barabasi-albert':
         return gen_barabasi_albert(n, params['m'])
     if params['type'] == 'sparse-ill-conditioned':
-        return gen_sparse_ill_conditioned(n)
+        return gen_sparse_ill_conditioned(n, params['edge_factor'], params['small_capacity_fraction'], params['scaling_factor'])
     return None
 
 

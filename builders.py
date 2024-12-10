@@ -74,6 +74,9 @@ def gen_erdos_renyi(n, p):
         capacity = random.random()
         G[u][v]["capacity"] = capacity
         G.add_edge(v, u, capacity=capacity)
+    
+    # Guarantee that there is at least one edge
+    G.add_edge(0, 1, capacity=random.random())
 
     return G
 
